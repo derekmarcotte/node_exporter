@@ -119,8 +119,8 @@ func NewMemoryCollector() (Collector, error) {
 	}, nil
 }
 
-// Update checks relevant sysctls for curent memrory usage, and kvm for swap
-// useage.
+// Update checks relevant sysctls for current memory usage, and kvm for swap
+// usage.
 func (c *memoryCollector) Update(ch chan<- prometheus.Metric) error {
 	for _, m := range c.sysctls {
 		v, err := m.Value()
