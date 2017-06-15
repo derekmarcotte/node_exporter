@@ -15,5 +15,12 @@
 // +build freebsd dragonfly
 
 #include <sys/types.h>
+#include <kvm.h>
+
+int _kvm_init_descriptor();
+int _kvm_close();
 
 int _kvm_swap_used_pages(uint64_t *out);
+
+extern void processStatusCountsAdd(void *p, char *name, char *status);
+int _kvm_get_procstats(void *p);

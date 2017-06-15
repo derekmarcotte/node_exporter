@@ -116,6 +116,7 @@ func NewMemoryCollector() (Collector, error) {
 				conversion:  fromPage,
 			},
 		},
+		kvm: *(NewKvm()),
 	}, nil
 }
 
@@ -152,6 +153,9 @@ func (c *memoryCollector) Update(ch chan<- prometheus.Metric) error {
 			"Currently allocated swap",
 			nil, nil,
 		), prometheus.GaugeValue, float64(swapUsed*c.pageSize))
+
+	tmp, _ := c.kvm.ProcessStatusCounts()
+	fmt.Printf("%+v\n", tmp)
 
 	return nil
 }
