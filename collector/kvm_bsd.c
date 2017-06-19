@@ -24,7 +24,7 @@
 #include <sys/proc.h>
 #include <sys/user.h>
 
-#include "_cgo_export.h"
+#include "kvm_bsd.h"
 
 /* Reference to kvm descriptor, must call _kvm_init_descriptor before use,
  * should call _kvm_close when no longer needed.
@@ -79,28 +79,29 @@ int _kvm_swap_used_pages(uint64_t *out) {
 	return 0;
 }
 
-int _kvm_get_procstats(void *p) {
+int _kvm_get_procstats(proc_state_t *out, int *nentries) {
 	struct kinfo_proc *kp;
-	int nentries = -1;
-
 	int i;
-	char *name;
-	char *status;
 
+	(*nentries) = -1;
 	if (kd == NULL) {
 		return -1;
 	}
 	
-	kp = kvm_getprocs(kd, KERN_PROC_PROC, 0, &nentries);
-	if ((kp == NULL && nentries > 0) || (kp != NULL && nentries < 0)) {
+	kp = kvm_getprocs(kd, KERN_PROC_PROC, 0, nentries);
+	if ((kp == NULL && (*nentries) > 0) || (kp != NULL && (*nentries) < 0)) {
 		return -1;
 	}
 
-	for (i = nentries; --i >= 0; ++kp) {
+	out = malloc(sizeof(proc_state_t) * (*nentries));
+	if (out == NULL) {
+		return -1;
+	}
+
+	for (i = 0; i < (*nentries); i++, ++kp) {
 		// TODO: Add more detail to the status
-		name = kp->ki_comm;
-		status = state_abbrev[kp->ki_stat];
-		processStatusCountsAdd(p, kp->ki_comm, status);
+		out[i].name = kp->ki_comm;
+		out[i].status = state_abbrev[kp->ki_stat];
 	}
 
 	return 0;

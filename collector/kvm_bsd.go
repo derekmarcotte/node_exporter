@@ -43,10 +43,6 @@ type processStatus struct {
  */
 //export processStatusCountsAdd
 func processStatusCountsAdd(p *[]processStatus, name *C.char, status *C.char) {
-	(*p)[processStatus{
-		name:   C.GoString(name),
-		status: C.GoString(status),
-	}]++
 }
 
 /** kvm is the driver to interface with BSD kvm system calls to build metrics from. */
@@ -83,7 +79,7 @@ func (k *kvm) SwapUsedPages() (value uint64, err error) {
 	return value, nil
 }
 
-func (k *kvm) ProcessStatusCounts() (p []processStatus, err error) {
+func (k *kvm) ProcessStatusCounts() (p map[processStatus]int, err error) {
 	if k.hasErr {
 		return nil, fmt.Errorf("couldn't get kvm process count")
 	}
@@ -91,11 +87,29 @@ func (k *kvm) ProcessStatusCounts() (p []processStatus, err error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
-	p = make(map[processStatus]int)
-	if C._kvm_get_procstats(unsafe.Pointer(&p)) != 0 {
+	var ps *C.struct_proc_state
+	var nentries C.int
+
+	if C._kvm_get_procstats(unsafe.Pointer(ps), &nentries) != 0 {
+		if ps != nil {
+			C.free(ps)
+		}
 		k.error()
 		return nil, fmt.Errorf("couldn't get kvm process count")
 	}
+
+	p = make(map[processStatus]int)
+	if ps == nil {
+		return p, nil
+	}
+
+	for i := (C.int)(0); i < nentries; i++ {
+		p[processStatus{
+			name:   C.GoString(ps[i].name),
+			status: C.GoString(ps[i].status),
+		}]++
+	}
+	C.free(ps)
 
 	return p, nil
 }

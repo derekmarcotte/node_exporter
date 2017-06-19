@@ -14,13 +14,18 @@
 // +build !nomeminfo
 // +build freebsd dragonfly
 
+#include <stdlib.h>
 #include <sys/types.h>
 #include <kvm.h>
+
+typedef struct proc_state {
+	char *name;
+	char *status;
+} proc_state_t;
 
 int _kvm_init_descriptor();
 int _kvm_close();
 
 int _kvm_swap_used_pages(uint64_t *out);
 
-extern void processStatusCountsAdd(void *p, char *name, char *status);
-int _kvm_get_procstats(void *p);
+int _kvm_get_procstats(proc_state_t *out, int *nentries);
