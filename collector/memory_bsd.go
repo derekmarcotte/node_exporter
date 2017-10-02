@@ -116,7 +116,7 @@ func NewMemoryCollector() (Collector, error) {
 				conversion:  fromPage,
 			},
 		},
-		kvm: *(NewKvm()),
+		kvm: NewKvm(),
 	}, nil
 }
 
@@ -154,8 +154,21 @@ func (c *memoryCollector) Update(ch chan<- prometheus.Metric) error {
 			nil, nil,
 		), prometheus.GaugeValue, float64(swapUsed*c.pageSize))
 
-	tmp, _ := c.kvm.ProcessStatusCounts()
-	fmt.Printf("%+v\n", tmp)
+	processes, err := c.kvm.ProcessStatusCounts()
+	if err != nil {
+		return fmt.Errorf("couldn't get kvm: %s", err)
+	}
+
+	for proc, count := range processes {
+		ch <- prometheus.MustNewConstMetric(
+			prometheus.NewDesc(
+				prometheus.BuildFQName(Namespace, "exec", "process_state_count"),
+				"Number of processes in a particular state at a moment in time",
+				[]string{"process", "state"}, nil,
+			), prometheus.GaugeValue, float64(count), proc.name, proc.status)
+	}
+
+	fmt.Printf("%+v\n", processes)
 
 	return nil
 }

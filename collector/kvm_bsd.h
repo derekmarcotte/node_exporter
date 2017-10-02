@@ -23,9 +23,8 @@ typedef struct proc_state {
 	char *status;
 } proc_state_t;
 
-int _kvm_init_descriptor();
-int _kvm_close();
+int _kvm_open(kvm_t **out);
+int _kvm_close(kvm_t **kd);
 
-int _kvm_swap_used_pages(uint64_t *out);
-
-int _kvm_get_procstats(proc_state_t *out, int *nentries);
+int _kvm_swap_used_pages(kvm_t *kd, uint64_t *out);
+int _kvm_get_procstats(kvm_t *kd, proc_state_t **out, int *nentries);

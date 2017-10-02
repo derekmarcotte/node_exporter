@@ -31,47 +31,32 @@ type processStatus struct {
 	status string
 }
 
-/** processStatusCounts represents the count of each processStatus tuple as
- * returned by kvm_getprocs.  A collector can then safely iterate over, and
- * expose these as prometheus metrics.
- *
- * We want to do our copies and dynamic allocations on the Go side, yet iterate
- * over and access the process data structures on the C side.
- *
- * The C side is handled via processStatusCountsAdd, which refers to a
- * processStatusCounts declared on the Go side.
- */
-//export processStatusCountsAdd
-func processStatusCountsAdd(p *[]processStatus, name *C.char, status *C.char) {
-}
-
 /** kvm is the driver to interface with BSD kvm system calls to build metrics from. */
 type kvm struct {
-	mu     sync.Mutex
-	hasErr bool
+	mu      sync.Mutex
+	isValid bool
+	d       *C.struct___kvm
 }
 
-func NewKvm() *kvm {
+func NewKvm() kvm {
 	var k kvm
 
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if C._kvm_init_descriptor() != 0 {
-		// We don't run k.error here, it doesn't need closing.
-		k.hasErr = true
+	if C._kvm_open(&k.d) == 0 {
+		k.isValid = true
 	}
 
-	return &k
+	return k
 }
 
 func (k *kvm) SwapUsedPages() (value uint64, err error) {
-	if k.hasErr {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	if !k.isValid {
 		return 0, fmt.Errorf("couldn't get kvm swap used pages")
 	}
 
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if C._kvm_swap_used_pages((*C.uint64_t)(&value)) != 0 {
+	if C._kvm_swap_used_pages(k.d, (*C.uint64_t)(&value)) != 0 {
 		k.error()
 		return 0, fmt.Errorf("couldn't get kvm swap used pages")
 	}
@@ -79,43 +64,42 @@ func (k *kvm) SwapUsedPages() (value uint64, err error) {
 	return value, nil
 }
 
-func (k *kvm) ProcessStatusCounts() (p map[processStatus]int, err error) {
-	if k.hasErr {
-		return nil, fmt.Errorf("couldn't get kvm process count")
-	}
-
+func (k *kvm) ProcessStatusCounts() (out map[processStatus]int, err error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
-	var ps *C.struct_proc_state
-	var nentries C.int
+	if !k.isValid {
+		return nil, fmt.Errorf("couldn't get kvm process count")
+	}
 
-	if C._kvm_get_procstats(unsafe.Pointer(ps), &nentries) != 0 {
-		if ps != nil {
-			C.free(ps)
-		}
+	var stateList *C.struct_proc_state = nil
+	var stateListCount C.int
+
+	ret := C._kvm_get_procstats(k.d, &stateList, &stateListCount)
+	if stateList != nil {
+		defer C.free(unsafe.Pointer(stateList))
+	}
+	if ret != 0 {
 		k.error()
 		return nil, fmt.Errorf("couldn't get kvm process count")
 	}
 
-	p = make(map[processStatus]int)
-	if ps == nil {
-		return p, nil
-	}
+	out = make(map[processStatus]int)
 
-	for i := (C.int)(0); i < nentries; i++ {
-		p[processStatus{
-			name:   C.GoString(ps[i].name),
-			status: C.GoString(ps[i].status),
+	start := uintptr(unsafe.Pointer(stateList))
+	for i := uintptr(0); i < uintptr(stateListCount); i++ {
+		processState := (*C.struct_proc_state)(unsafe.Pointer(start + (i * C.sizeof_struct_proc_state)))
+		out[processStatus{
+			name:   C.GoString(processState.name),
+			status: C.GoString(processState.status),
 		}]++
 	}
-	C.free(ps)
 
-	return p, nil
+	return out, nil
 }
 
 func (k *kvm) error() {
 	// Called only from within a mutex.
-	k.hasErr = true
-	C._kvm_close()
+	C._kvm_close(&k.d)
+	k.isValid = false
 }
